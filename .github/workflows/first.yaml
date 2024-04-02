@@ -3,7 +3,7 @@ on: [push]
 
 jobs:
   run-shell-commands:
-    runs-on: ubuntu:latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: echo a string
@@ -12,4 +12,17 @@ jobs:
         run: |
           node -v
           npm -v
-
+  parallel-job-macos:
+    runs-on: macos
+    steps:
+      - name: view sw version
+        run: sw_vers
+  dependent-job:
+    runs-on: windows-latest
+    needs: run-shell-commands
+    steps:
+      - name: echo a string 
+        run: write-output "windows string"
+      - name: Error Step 
+        run: doxestersdcmeock
+        

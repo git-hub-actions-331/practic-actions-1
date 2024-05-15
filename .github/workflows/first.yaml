@@ -100,7 +100,7 @@ jobs:
           ls -la
 
           # Clone the newly created repository
-          git clone "https://${{ secrets.MODULE_BOOTSTRAP_PAT_JAMIE }}@github.com/${{ inputs.module_org }}/$repo_name.git"
+          # git clone "https://${{ secrets.MODULE_BOOTSTRAP_PAT_JAMIE }}@github.com/${{ inputs.module_org }}/$repo_name.git"
 
           # Navigate into the repository
           cd "$repo_name"

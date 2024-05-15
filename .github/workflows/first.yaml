@@ -44,17 +44,6 @@ jobs:
           repo_name="terraform-${{ inputs.cloud_provider }}-module-${{ inputs.repo_module_name }}"
           repo_name=$(echo "$repo_name" | tr '[:upper:]' '[:lower:]')
 
-          # Check if the repository exists using the GitHub API
-          status_code=$(curl \
-            -L \
-            -o /dev/null \
-            -s \
-            -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.MODULE_BOOTSTRAP_PAT_JAMIE }}" \
-            https://api.github.com/repos/${{ inputs.module_org }}/$repo_name)
-
-          # If the repository does not exist (HTTP status code 404), create it
-          if [ "$status_code" -eq 404 ]; then
             # Create a new repository using the GitHub API
             curl \
               -L \

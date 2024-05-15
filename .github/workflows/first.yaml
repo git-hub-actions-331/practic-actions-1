@@ -1,28 +1,152 @@
-name: First Workflow
-on: [push]
+name: Bootstrap Repo
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud_provider:
+        description: "aws or google"
+        required: true
+        type: string
+      namespace:
+        description: "namespace for the module"
+        required: true
+        type: string
+      tf_module_name:
+        description: "name of TF module"
+        required: true
+        type: string
+      repo_module_name:
+        description: "custom name of module"
+        required: true
+        type: string
+      module_version:
+        description: "version of module"
+        required: true
+        type: string
+      module_org:
+        description: "github org name"
+        required: true
+        type: string
+      submodules:
+        description: "list of submodules"
+        required: false
+        type: string
 
 jobs:
-  run-shell-commands:
+  bootstrap:
     runs-on: ubuntu-latest
 
     steps:
-      - name: echo a string
-        run: echo "Hello world"
-      - name: Multistring
+      - name: Create new repo
+        shell: bash
         run: |
-          node -v
-          npm -v
-  parallel-job-macos:
-    runs-on: macos-latest
-    steps:
-      - name: view sw version
-        run: sw_vers
-  dependent-job:
-    runs-on: windows-latest
-    needs: run-shell-commands
-    steps:
-      - name: echo a string 
-        run: write-output "windows string"
-      - name: Error Step 
-        run: doxestersdcmeock
-        
+          # Set repo name
+          repo_name="terraform-${{ inputs.cloud_provider }}-module-${{ inputs.repo_module_name }}"
+          repo_name=$(echo "$repo_name" | tr '[:upper:]' '[:lower:]')
+
+          # Check if the repository exists using the GitHub API
+          status_code=$(curl \
+            -L \
+            -o /dev/null \
+            -s \
+            -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.MODULE_BOOTSTRAP_PAT_JAMIE }}" \
+            https://api.github.com/repos/${{ inputs.module_org }}/$repo_name)
+
+          # If the repository does not exist (HTTP status code 404), create it
+          if [ "$status_code" -eq 404 ]; then
+            # Create a new repository using the GitHub API
+            curl \
+              -L \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.MODULE_BOOTSTRAP_PAT_JAMIE }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/orgs/${{ inputs.module_org }}/repos \
+              -d '{"name":"'$repo_name'","description":"Terraform module repo bootstrapped from pipeline","private":true,"has_issues":true,"has_projects":true,"has_wiki":false}'
+
+            # Create an empty README file in the new repository
+            curl \
+              -L \
+              -X PUT \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.MODULE_BOOTSTRAP_PAT_JAMIE }}" \
+              https://api.github.com/repos/${{ inputs.module_org }}/$repo_name/contents/README.md \
+              -d '{"message":"Add README","content":"'$(echo -n "" | base64)'"}'
+
+            team_slugs=("cloud-devsecops-sapient" "AWST-Github_Developer")
+            for team_slug in "${team_slugs[@]}"; do
+              curl \
+                -L \
+                -X PUT \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${{ secrets.MODULE_BOOTSTRAP_PAT_JAMIE }}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                https://api.github.com/orgs/${{ inputs.module_org }}/teams/$team_slug/repos/${{ inputs.module_org }}/$repo_name \
+                -d '{"permission":"push"}'
+            done
+
+            # Add a topic to the repository
+            curl \
+              -L \
+              -X PUT \
+              -H "Accept: application/vnd.github.mercy-preview+json" \
+              -H "Authorization: Bearer ${{ secrets.MODULE_BOOTSTRAP_PAT_JAMIE }}" \
+              https://api.github.com/repos/${{ inputs.module_org }}/$repo_name/topics \
+              -d '{
+                "names": ["team-devsecops"]
+              }'
+          else
+          echo "Repository already exists..."
+          echo "Update files in the repository..."
+          fi
+
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+
+      - name: File Generation with Python
+        shell: bash
+        run: |
+          repo_name="terraform-${{ inputs.cloud_provider }}-module-${{ inputs.repo_module_name }}"
+          repo_name=$(echo "$repo_name" | tr '[:upper:]' '[:lower:]')
+
+          cd .github/workflows
+          pwd
+          ls -la
+
+          # Clone the newly created repository
+          git clone "https://${{ secrets.MODULE_BOOTSTRAP_PAT_JAMIE }}@github.com/${{ inputs.module_org }}/$repo_name.git"
+
+          # Navigate into the repository
+          cd "$repo_name"
+
+          pwd
+          ls -la
+
+          # Run the Python script with inputs
+          python3 ../create.py ${{ inputs.namespace }} ${{ inputs.tf_module_name }} ${{ inputs.repo_module_name }} ${{ inputs.cloud_provider}} ${{ inputs.module_version }} ${{ inputs.submodules }}
+
+          # Configure git user
+          git config user.name github-actions-CloudDevSecOps
+          git config user.email github-actions-CloudDevSecOps@mcd.com
+
+          # Add the files to the repository
+          git checkout -b feature/bootstrap
+          git add .
+
+          # Commit the files
+          git commit -m "Initial files"
+
+          # Push the files to the repository
+          git push origin feature/bootstrap
+
+          # Clean up folders
+          cd ..
+          rm -rf "$repo_name"
+
+      - name: Output Git repo url
+        run: |
+          repo_name="terraform-${{ inputs.cloud_provider }}-module-${{ inputs.repo_module_name }}"
+          repo_name=$(echo "$repo_name" | tr '[:upper:]' '[:lower:]')
+          echo "Repo URL: https://github.com/${{ inputs.module_org }}/$repo_name.git"
+        shell: bash
